@@ -1,6 +1,7 @@
 'use client';
 import Image from 'next/image';
-import React, { useState } from 'react';
+import React, { useState, useTransition } from 'react'; // 👈 Add useTransition
+import { checkJumperAvailability } from './actions'; // 👈 Import your server action
 
 // --- TypeScript Interfaces ---
 interface Jumper {
@@ -56,6 +57,10 @@ export default function Home() {
   const [formStatus, setFormStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [successMessage, setSuccessMessage] = useState('');
 
+  // --- NEW: Server Action State ---
+  const [isPending, startTransition] = useTransition(); // Handles the "Checking..." loading state
+  const [availabilityStatus, setAvailabilityStatus] = useState<'idle' | 'available' | 'booked'>('idle');
+
   // New Handler: Sets the selected jumper and scrolls to the contact form.
   const handleRentNow = (jumperName: string) => {
     setSelectedJumper(jumperName);
@@ -63,6 +68,28 @@ export default function Home() {
     if (contactSection) {
       contactSection.scrollIntoView({ behavior: 'smooth' });
     }
+  };
+
+  const handleCheckAvailability = async () => {
+    // Get the current date value from the input manually since it's not in state yet
+    const dateInput = (document.getElementById('date') as HTMLInputElement)?.value;
+
+    if (!dateInput || !selectedJumper) {
+        alert("Please select a Jumper and a Date first.");
+        return;
+    }
+
+    // startTransition allows Next.js to handle the async server action gracefully
+    startTransition(async () => {
+        // Call the server function directly! No fetch() needed.
+        const result = await checkJumperAvailability(dateInput, selectedJumper);
+        
+        if (result.available) {
+            setAvailabilityStatus('available');
+        } else {
+            setAvailabilityStatus('booked');
+        }
+    });
   };
 
   // Form Handler (Updated to use setSelectedJumper when resetting)
@@ -249,11 +276,35 @@ export default function Home() {
                 className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6B6B] focus:border-[#FF6B6B] outline-none"
               />
             </div>
+            {/* --- MODIFIED DATE & CHECK SECTION --- */}
             <div>
               <label htmlFor="date" className="block text-sm font-medium text-gray-700">Event Date</label>
-              <input type="date" id="date" name="date" required
-                className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6B6B] focus:border-[#FF6B6B] outline-none"
-              />
+              <div className="flex gap-2">
+                <input 
+                    type="date" 
+                    id="date" 
+                    name="date" 
+                    required
+                    onChange={() => setAvailabilityStatus('idle')} // Reset status if they change date
+                    className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg outline-none focus:ring-2 focus:ring-[#FF6B6B]"
+                />
+                <button 
+                    type="button"
+                    onClick={handleCheckAvailability}
+                    disabled={isPending || !selectedJumper} // Disable while server is thinking
+                    className="mt-1 px-4 py-2 bg-[#FF6B6B] text-white rounded-lg font-bold hover:bg-[#e55c5c] transition disabled:opacity-50 min-w-[100px]"
+                >
+                    {isPending ? '...' : 'Check'} 
+                </button>
+              </div>
+              
+              {/* Feedback Messages */}
+              {availabilityStatus === 'available' && (
+                  <p className="text-sm font-bold mt-2 text-green-600">✅ Available! You can book.</p>
+              )}
+              {availabilityStatus === 'booked' && (
+                  <p className="text-sm font-bold mt-2 text-red-600">❌ Sorry, booked. Try another date.</p>
+              )}
             </div>
             <div>
               <label htmlFor="jumper-type" className="block text-sm font-medium text-gray-700">Preferred Jumper</label>
@@ -279,7 +330,13 @@ export default function Home() {
                 className="mt-1 block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-[#FF6B6B] focus:border-[#FF6B6B] outline-none"
               ></textarea>
             </div>
-            <button type="submit" className="w-full py-3 text-lg font-bold rounded-lg text-white bg-[#FF6B6B] hover:bg-[#e55c5c] transition transform active:scale-95">
+            {/* Submit Button - Locked until Available */}
+            <button 
+                type="submit" 
+                disabled={availabilityStatus !== 'available'}
+                className={`w-full py-3 text-lg font-bold rounded-lg text-white transition transform active:scale-95 
+                   ${availabilityStatus === 'available' ? 'bg-[#FF6B6B] hover:bg-[#e55c5c]' : 'bg-gray-400 cursor-not-allowed'}`}
+            >
               Submit Booking Request
             </button>
           </form>
@@ -287,7 +344,7 @@ export default function Home() {
         </div>
       </section>
 
-      {/* --- FOOTER (No Changes) --- */}
+    {/* --- FOOTER (No Changes) --- */}
       <footer className="bg-[#333333] py-8 text-center text-gray-400 text-sm">
         <div className="max-w-7xl mx-auto px-4">
           <p>&copy; {new Date().getFullYear()} JumpStart Rentals. All rights reserved.</p>
